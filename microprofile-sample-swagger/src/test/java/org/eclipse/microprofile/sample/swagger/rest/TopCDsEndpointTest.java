@@ -17,8 +17,6 @@
  */
 package org.eclipse.microprofile.sample.swagger.rest;
 
-import org.eclipse.microprofile.sample.swagger.rest.RestApplication;
-import org.eclipse.microprofile.sample.swagger.rest.TopCDsEndpoint;
 import org.eclipse.microprofile.sample.swagger.utils.QLogger;
 import org.eclipse.microprofile.sample.swagger.utils.ResourceProducer;
 import org.jboss.arquillian.container.test.api.Deployment;
@@ -27,13 +25,15 @@ import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.asset.EmptyAsset;
+import org.jboss.shrinkwrap.api.asset.FileAsset;
+import org.jboss.shrinkwrap.api.exporter.ZipExporter;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.resolver.api.maven.Maven;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.wildfly.swarm.jaxrs.JAXRSArchive;
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -66,16 +66,34 @@ public class TopCDsEndpointTest {
 
     @Deployment
     public static Archive<?> createDeployment() {
+        Archive<?> archive;
         if (System.getProperty("arquillian.launch", "").equals("arquillian-hammock")) {
-            return ShrinkWrap.create(JavaArchive.class)
-                    .addClasses(RestApplication.class, TopCDsEndpoint.class, QLogger.class, ResourceProducer.class);
+            JavaArchive[] libs = Maven.resolver().loadPomFromFile("pom.xml").importCompileAndRuntimeDependencies().resolve().withoutTransitivity().as(JavaArchive.class);
+            // Import Maven runtime dependencies
+            archive = ShrinkWrap.create(JavaArchive.class)
+                                .addClasses(RestApplication.class, TopCDsEndpoint.class, QLogger.class, ResourceProducer.class)
+                                .addPackage("org.deltaspike");
+
+            // To get deltaspike into the archive
+            for (final JavaArchive ja : libs) {
+                archive.merge(ja);
+            }
+
         } else {
             // Import Maven runtime dependencies
-            File[] files = Maven.resolver().loadPomFromFile("pom.xml").importRuntimeDependencies().resolve().withTransitivity().asFile();
+            File[] files = Maven.resolver().loadPomFromFile("pom.xml").importCompileAndRuntimeDependencies().resolve().withoutTransitivity().asFile();
 
-            return ShrinkWrap.create(WebArchive.class).addClass(RestApplication.class).addClass(TopCDsEndpoint.class)
-                    .addClass(ResourceProducer.class).addAsWebInfResource(EmptyAsset.INSTANCE, "beans.xml").addAsLibraries(files);
+            archive = ShrinkWrap.create(JAXRSArchive.class)
+                                .addClasses(RestApplication.class, TopCDsEndpoint.class, ResourceProducer.class)
+                                .addAsWebInfResource(new FileAsset(new File("src/main/resources/META-INF/beans.xml")), "beans.xml")
+                                .addAsLibraries(files);
+
         }
+
+        // For debugging
+        //archive.as(ZipExporter.class).exportTo(new File("C:\\Users\\herzo\\" + archive.getName()), true);
+
+        return archive;
     }
 
     // ======================================
